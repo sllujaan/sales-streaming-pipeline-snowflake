@@ -1,3 +1,32 @@
+-- # Real-Time Data Pipeline and Warehouse for Sales Using Snowflake
+
+-- This project demonstrates a comprehensive real-time data warehouse solution for processing and analyzing incoming sales data from raw files.
+
+-- ## Project Overview
+
+-- This project provides solutions for:
+
+-- 1. **Streaming Data Pipelines**: Efficiently processing and transforming incoming sales data in real-time.
+-- 2. **Data Warehouse**: Storing and managing the processed data for efficient querying and analysis.
+-- 3. **Data Analysis**: Analyzing the stored data to derive meaningful insights.
+
+-- ## Tools and Technologies Used
+
+-- 1. **Snowflake**: Utilized for Streaming to handle real-time data processing.
+-- 2. **SQL**: Employed for querying and managing data within the data warehouse.
+
+-- ## ETL Life Cycle
+
+-- The project implements the full ETL (Extract, Transform, Load) life cycle:
+
+-- 1. **Extract**: Raw sales data is ingested from various sources.
+-- 2. **Transform**: Data is processed and transformed in real-time using Snowflake Streaming.
+-- 3. **Load**: Transformed data is loaded into the data warehouse for storage and further analysis.
+
+-- This project showcases an end-to-end solution for real-time data warehousing, ensuring that sales data is processed, stored, and analyzed efficiently.
+
+
+
 DROP DATABASE IF EXISTS DEMO;
 CREATE DATABASE IF NOT EXISTS DEMO;
 CREATE SCHEMA IF NOT EXISTS DEMO.PUBLIC;
@@ -95,12 +124,12 @@ as
 with cte as
 (
     select
-        customer_id,customer_name,
+        customer_id,customer_name, customer_age, customer_country,
         row_number() over (partition by customer_id order by last_modified desc) as rn
     
     from raw_data_stream where is_valid = true
 )
-select customer_id,customer_name from cte where rn = 1;
+select customer_id,customer_name, customer_age, customer_country from cte where rn = 1;
 
 
 -- create a view for the new products
@@ -134,7 +163,9 @@ select id, customer_id, product_id, product_quantity, order_date from cte where 
 ------------------create final tables-----------------------------
 create or replace table customers(
     id int primary key not null AUTOINCREMENT,
-    name VARCHAR(16777216)
+    name VARCHAR(16777216),
+    age int,
+    country VARCHAR(16777216)
 );
 
 create or replace table products(
@@ -167,9 +198,9 @@ begin
             using new_customers t2
             on t1.id = t2.customer_id
             when matched
-                then update set t1.name = t2.customer_name
+                then update set t1.name = t2.customer_name, t1.age = t2.customer_age, t1.country = t2.customer_country
             when not matched
-                then insert (id, name) values (t2.customer_id, t2.customer_name);
+                then insert (id, name, age, country) values (t2.customer_id, t2.customer_name, t2.customer_age, t2.customer_country);
                 
         merge into products t1
             using new_products t2
@@ -212,17 +243,107 @@ alter task raw_data_load_task resume;
 
 
 
--- Thats it we have just create a streaming pipeline for our sales data
+-- That's it we have just create a streaming pipeline for our sales data
 
 
+
+
+------------------------Analytical queries---------------------------------
+
+
+
+--------sales by year and month----------------
+select
+        YEAR(sales.order_date) as year,
+        MONTH(sales.order_date) as month,
+        SUM(sales.product_quantity * products.price) as total_sales,
+        count(*) as total_orders
+    from sales
+        left join products
+            on sales.product_id = products.id
+    group by year, month
+    order by year, month;
+
+
+--------sales by product----------------
+select
+        products.name as product_name,
+        SUM(sales.product_quantity * products.price) as total_sales,
+        count(*) as total_orders
+    from sales
+        left join products
+            on sales.product_id = products.id
+    group by product_name
+    order by product_name;
+
+
+
+--------sales by country----------------
+select
+        customers.country as country,
+        SUM(sales.product_quantity * products.price) as total_sales,
+        count(*) as total_orders
+    from sales
+        left join customers
+            on sales.customer_id = customers.id
+        left join products
+            on sales.product_id = products.id
+    group by country
+    order by country;
+
+
+
+--------sales by year----------------
+select
+        YEAR(sales.order_date) as year,
+        SUM(sales.product_quantity * products.price) as total_sales,
+        count(*) as total_orders
+    from sales
+        left join products
+            on sales.product_id = products.id
+    group by year
+    order by year;
+
+
+--------sales by month----------------
+select
+        MONTH(sales.order_date) as month,
+        SUM(sales.product_quantity * products.price) as total_sales,
+        count(*) as total_orders
+    from sales
+        left join products
+            on sales.product_id = products.id
+    group by month
+    order by month;
+
+
+--------sales by month and country----------------
+select
+        MONTH(sales.order_date) as month,
+        customers.country as country,
+        SUM(sales.product_quantity * products.price) as total_sales,
+        count(*) as total_orders
+    from sales
+        left join products
+            on sales.product_id = products.id
+        left join customers
+            on sales.customer_id = customers.id
+    group by month, country
+    order by month, country;
+
+
+
+
+
+
+
+----------------- use full queries---------------------
 --execute task task_load_to_warehouse;
 --call load_to_warehouse();
 --alter pipe raw_data_load refresh;
 --select SYSTEM$STREAM_HAS_DATA('raw_data_stream');
 --select * from raw_data_stream;
+--select * from raw_data;
 --select * from customers;
 --select * from products;
 --select * from sales;
-
-
-
